@@ -15,7 +15,8 @@ import (
 // one provider round trip at a time. Every one of those calls is certain to
 // come, so when the router sees the request for block N it asks the provider
 // for N's receipts and for the next few blocks and their receipts straight
-// away, and hands each answer over when the scanner asks for it.
+// away, and hands each answer over when the scanner asks for it. Receipts are
+// only fetched early while the scanner is asking for them (see receiptDemand).
 //
 // Rules that keep this invisible to the scanner:
 //   - Only heights at or below the provider's safe head are fetched early or
@@ -51,6 +52,44 @@ type readAhead struct {
 	safe    atomic.Uint64
 	fetches atomic.Uint64
 	hits    atomic.Uint64
+}
+
+// receiptDemand tracks whether the scanner still asks for block receipts.
+// Recent Bifrost releases decide from the block itself whether they need them
+// and skip most; earlier versions asked for every block. Early receipt calls are made
+// only while the scanner asked for receipts for at least half of the last
+// receiptWindow blocks it fetched, so an early call is still one the provider
+// would have received anyway. Until the first window is complete they are made.
+type receiptDemand struct {
+	mu               sync.Mutex
+	blocks, receipts int
+	off              bool
+}
+
+const receiptWindow = 32
+
+func (d *receiptDemand) note(q rpcQuery) {
+	_, full, isBlock := q.block()
+	_, _, isReceipts := q.receipts()
+	if !(isBlock && full) && !isReceipts {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if isReceipts {
+		d.receipts++
+		return
+	}
+	if d.blocks++; d.blocks >= receiptWindow {
+		d.off = d.receipts*2 < d.blocks
+		d.blocks, d.receipts = 0, 0
+	}
+}
+
+func (d *receiptDemand) wanted() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return !d.off
 }
 
 // learnSafe records the height of a safe-head header. It only moves forward.
@@ -149,7 +188,9 @@ func (u *upstream) readAhead(req *http.Request, height uint64, full bool, ahead 
 			if h > height {
 				early("eth_getBlockByNumber", h, `["`+blockTag(h)+`",true]`)
 			}
-			early("eth_getBlockReceipts", h, `["`+blockTag(h)+`"]`)
+			if u.demand.wanted() {
+				early("eth_getBlockReceipts", h, `["`+blockTag(h)+`"]`)
+			}
 		}
 		return u.ahead.take(req, key("eth_getBlockByNumber", height))
 	}
@@ -157,8 +198,9 @@ func (u *upstream) readAhead(req *http.Request, height uint64, full bool, ahead 
 }
 
 // readAheadHeader (read_ahead_headers) extends read-ahead to header-by-height
-// queries. The scanner can send two with every block, at the same instant as the
-// block request: one for that height and one a fixed distance behind it. Both streams advance by one per block, so a header query for h
+// queries. An EVM scanner can send header queries with every block, at the same
+// instant as the block request, for that height and for a fixed distance
+// behind it. Both streams advance by one per block, so a header query for h
 // predicts queries for h+1, h+2, ... and those are fetched now.
 //
 // Each answer is still the provider's own reply for that exact height, fetched

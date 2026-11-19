@@ -3,6 +3,60 @@
   "admin_socket": "/run/rpc-gateway/admin/control.sock",
   "state_file": "/var/lib/rpc-gateway/routes.json",
   "chains": {
+    "bsc": {
+      "default": "adapter", "active": 32, "waiting": 32,
+      "timeout_seconds": 30, "queue_seconds": 2, "max_request_bytes": 1048576,
+      "endpoints": {"rpc": {"path": "/bsc"}},
+      "backends": {
+        "native": {"rpc": "/etc/rpc-gateway/targets/bsc-native.json"},
+        "adapter": {"rpc": "/etc/rpc-gateway/targets/bsc-adapter.json"}
+      }
+    },
+    "avax": {
+      "default": "adapter", "active": 32, "waiting": 32,
+      "timeout_seconds": 30, "queue_seconds": 2, "max_request_bytes": 1048576,
+      "endpoints": {"rpc": {"path": "/avax"}},
+      "backends": {
+        "native": {"rpc": "/etc/rpc-gateway/targets/avax-native.json"},
+        "adapter": {"rpc": "/etc/rpc-gateway/targets/avax-adapter.json"}
+      }
+    },
+    "eth": {
+      "default": "adapter", "active": 32, "waiting": 32,
+      "timeout_seconds": 30, "queue_seconds": 2, "max_request_bytes": 1048576,
+      "endpoints": {"rpc": {"path": "/eth"}},
+      "backends": {
+        "native": {"rpc": "/etc/rpc-gateway/targets/eth-native.json"},
+        "adapter": {"rpc": "/etc/rpc-gateway/targets/eth-adapter.json"}
+      }
+    },
+    "tron": {
+      "default": "adapter", "active": 32, "waiting": 32,
+      "timeout_seconds": 35, "queue_seconds": 2, "max_request_bytes": 1048576,
+      "endpoints": {
+        "rest": {"path": "/tron-rest", "suffix": true},
+        "rpc": {"path": "/tron-rpc"}
+      },
+      "backends": {
+        "native": {
+          "rest": "/etc/rpc-gateway/targets/tron-rest-native.json",
+          "rpc": "/etc/rpc-gateway/targets/tron-rpc-native.json"
+        },
+        "adapter": {
+          "rest": "/etc/rpc-gateway/targets/tron-rest-adapter.json",
+          "rpc": "/etc/rpc-gateway/targets/tron-rpc-adapter.json"
+        }
+      }
+    },
+    "gaia": {
+      "default": "adapter", "active": 8, "waiting": 16,
+      "timeout_seconds": 15, "queue_seconds": 1, "max_request_bytes": 65536,
+      "endpoints": {"rpc": {"path": "/gaia", "suffix": true}},
+      "backends": {
+        "native": {"rpc": "/etc/rpc-gateway/targets/gaia-native.json"},
+        "adapter": {"rpc": "/etc/rpc-gateway/targets/gaia-adapter.json"}
+      }
+    },
     "base": {
       "default": "adapter", "active": 32, "waiting": 32,
       "timeout_seconds": 30, "queue_seconds": 2, "max_request_bytes": 1048576,

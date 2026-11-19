@@ -30,11 +30,11 @@ func TestHTTPSUpstreamNeverNegotiatesHTTP2(t *testing.T) {
 	u.EnableHTTP2 = true
 	u.StartTLS()
 	defer u.Close()
-	r, s := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": u.URL}})
+	r, s := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": u.URL}})
 	pool := x509.NewCertPool()
 	pool.AddCert(u.Certificate())
-	r.current.Load().upstreams["alpha"]["normal"]["rpc"].transport.TLSClientConfig.RootCAs = pool
-	code, body, err := post(s.Client(), s.URL+"/alpha", `{"method":"eth_blockNumber","params":[]}`)
+	r.current.Load().upstreams["bsc"]["normal"]["rpc"].transport.TLSClientConfig.RootCAs = pool
+	code, body, err := post(s.Client(), s.URL+"/bsc", `{"method":"eth_blockNumber","params":[]}`)
 	if err != nil || code != 200 || body != "verified HTTPS" {
 		t.Fatalf("HTTPS failed: %d %q %v", code, body, err)
 	}
@@ -61,26 +61,26 @@ func TestConfigValidation(t *testing.T) {
 	}
 	mutations := map[string]func(*Config){
 		"overlap": func(c *Config) {
-			ch := c.Chains["alpha"]
-			ch.Endpoints["rest"] = Endpoint{Path: "/alpha/sub"}
-			c.Chains["alpha"] = ch
+			ch := c.Chains["bsc"]
+			ch.Endpoints["rest"] = Endpoint{Path: "/bsc/sub"}
+			c.Chains["bsc"] = ch
 		},
 		"missing route member": func(c *Config) {
-			ch := c.Chains["alpha"]
+			ch := c.Chains["bsc"]
 			ch.Endpoints["rest"] = Endpoint{Path: "/other"}
-			c.Chains["alpha"] = ch
+			c.Chains["bsc"] = ch
 		},
-		"unbounded admission": func(c *Config) { ch := c.Chains["alpha"]; ch.Active = 10000; c.Chains["alpha"] = ch },
-		"unknown default":     func(c *Config) { ch := c.Chains["alpha"]; ch.Default = "missing"; c.Chains["alpha"] = ch },
+		"unbounded admission": func(c *Config) { ch := c.Chains["bsc"]; ch.Active = 10000; c.Chains["bsc"] = ch },
+		"unknown default":     func(c *Config) { ch := c.Chains["bsc"]; ch.Default = "missing"; c.Chains["bsc"] = ch },
 		"reserved path": func(c *Config) {
-			ch := c.Chains["alpha"]
+			ch := c.Chains["bsc"]
 			ch.Endpoints["rpc"] = Endpoint{Path: "/readyz"}
-			c.Chains["alpha"] = ch
+			c.Chains["bsc"] = ch
 		},
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {
-			c, f := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": "https://example.invalid/rpc"}})
+			c, f := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": "https://example.invalid/rpc"}})
 			mutate(&c)
 			writeJSON(t, f, c)
 			if _, err := loadCatalog(f); err == nil {
@@ -91,7 +91,7 @@ func TestConfigValidation(t *testing.T) {
 }
 
 func TestVolumeProvisioningDoesNotReinitializeLostState(t *testing.T) {
-	c, f := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": "https://example.invalid/rpc"}})
+	c, f := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": "https://example.invalid/rpc"}})
 	c.StateFile = filepath.Join(filepath.Dir(f), "state", "private", "routes.json")
 	c.AdminSocket = filepath.Join(filepath.Dir(f), "runtime", "private", "admin.sock")
 	writeJSON(t, f, c)
@@ -136,7 +136,7 @@ func TestVolumeProvisioningDoesNotReinitializeLostState(t *testing.T) {
 }
 
 func TestRestartAdoptsCatalogDriftAndRefusesCorruption(t *testing.T) {
-	c, file := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": "https://example.invalid/rpc"}})
+	c, file := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": "https://example.invalid/rpc"}})
 	r, err := newRouter(file, true)
 	if err != nil {
 		t.Fatal(err)
@@ -146,18 +146,18 @@ func TestRestartAdoptsCatalogDriftAndRefusesCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeJSON(t, c.Chains["alpha"].Backends["normal"]["rpc"], Target{URL: "https://example.invalid/changed"})
+	writeJSON(t, c.Chains["bsc"].Backends["normal"]["rpc"], Target{URL: "https://example.invalid/changed"})
 	// Catalog drift is adopted at a new revision bound to the new digest
 	// rather than leaving every chain without a router.
 	r, err = newRouter(file, false)
 	if err != nil {
 		t.Fatalf("restart after catalog drift: %v", err)
 	}
-	if got := r.current.Load(); got.state.Version != 2 || got.state.Catalog != got.catalog.digest || got.state.Routes["alpha"] != "normal" || r.faults.Load() != 0 {
+	if got := r.current.Load(); got.state.Version != 2 || got.state.Catalog != got.catalog.digest || got.state.Routes["bsc"] != "normal" || r.faults.Load() != 0 {
 		t.Fatalf("drift not rebound: %+v", got.state)
 	}
 	r.close()
-	writeJSON(t, c.Chains["alpha"].Backends["normal"]["rpc"], Target{URL: "https://example.invalid/rpc", AllowHTTP: true})
+	writeJSON(t, c.Chains["bsc"].Backends["normal"]["rpc"], Target{URL: "https://example.invalid/rpc", AllowHTTP: true})
 	for _, bad := range []string{`{}`, string(data[:len(data)/2])} {
 		if err := os.WriteFile(c.StateFile, []byte(bad), 0600); err != nil {
 			t.Fatal(err)
@@ -167,6 +167,49 @@ func TestRestartAdoptsCatalogDriftAndRefusesCorruption(t *testing.T) {
 			t.Fatal("init overwrote corrupt state")
 		}
 	}
+}
+
+func TestTRONRouteGroupIsAtomic(t *testing.T) {
+	a := textServer(t, "a")
+	b := textServer(t, "b")
+	c, f := fixtureConfig(t, map[string]map[string]string{"tron": {"normal": a.URL, "other": b.URL}})
+	ch := c.Chains["tron"]
+	ch.Endpoints = map[string]Endpoint{"rpc": {Path: "/tron-rpc"}, "rest": {Path: "/tron-rest", Suffix: true}}
+	for _, endpoints := range ch.Backends {
+		endpoints["rest"] = endpoints["rpc"]
+	}
+	c.Chains["tron"] = ch
+	writeJSON(t, f, c)
+	r, err := newRouter(f, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			s := r.current.Load()
+			backend := s.state.Routes["tron"]
+			if len(s.upstreams["tron"][backend]) != 2 {
+				t.Error("split TRON endpoints")
+				return
+			}
+		}
+	}()
+	for i := 0; i < 20; i++ {
+		switchRoute(t, r, "tron", "other")
+		switchRoute(t, r, "tron", "normal")
+	}
+	close(stop)
+	wg.Wait()
 }
 
 func TestBoundedQueueAndCancellation(t *testing.T) {
@@ -213,8 +256,8 @@ func TestOutageDoesNotEscapeSelectedRoute(t *testing.T) {
 	var count atomic.Int32
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { count.Add(1) }))
 	defer other.Close()
-	r, s := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": broken.URL, "other": other.URL}})
-	code, _, err := post(s.Client(), s.URL+"/alpha", "{}")
+	r, s := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": broken.URL, "other": other.URL}})
+	code, _, err := post(s.Client(), s.URL+"/bsc", "{}")
 	if err != nil || code != 503 || count.Load() != 0 {
 		t.Fatal("outage changed backend")
 	}
@@ -224,7 +267,7 @@ func TestOutageDoesNotEscapeSelectedRoute(t *testing.T) {
 		t.Fatal("readiness misrepresents provider health")
 	}
 	broken.Close()
-	code, _, err = post(s.Client(), s.URL+"/alpha", "{}")
+	code, _, err = post(s.Client(), s.URL+"/bsc", "{}")
 	if err != nil || code != 502 || count.Load() != 0 {
 		t.Fatal("connection refusal changed backend")
 	}
@@ -240,20 +283,20 @@ func TestHotReloadDrainsOldProviderAndRestartUsesNewCatalog(t *testing.T) {
 	}))
 	defer old.Close()
 	next := textServer(t, "new")
-	c, f := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": old.URL}})
+	c, f := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": old.URL}})
 	r, err := newRouter(f, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := httptest.NewServer(r)
 	done := make(chan string, 1)
-	go func() { _, b, _ := post(s.Client(), s.URL+"/alpha", "{}"); done <- b }()
+	go func() { _, b, _ := post(s.Client(), s.URL+"/bsc", "{}"); done <- b }()
 	<-entered
-	writeJSON(t, c.Chains["alpha"].Backends["normal"]["rpc"], Target{URL: next.URL, AllowHTTP: true})
+	writeJSON(t, c.Chains["bsc"].Backends["normal"]["rpc"], Target{URL: next.URL, AllowHTTP: true})
 	if w := adminRequest(r, "/reload", "{}", 1); w.Code != 200 {
 		t.Fatalf("reload %s", w.Body.String())
 	}
-	_, body, _ := post(s.Client(), s.URL+"/alpha", "{}")
+	_, body, _ := post(s.Client(), s.URL+"/bsc", "{}")
 	if body != "new" {
 		t.Error("new requests did not switch")
 	}
@@ -275,7 +318,7 @@ func TestHotReloadDrainsOldProviderAndRestartUsesNewCatalog(t *testing.T) {
 
 func TestPrivateAdminSocketAndGracefulShutdown(t *testing.T) {
 	u := textServer(t, "ok")
-	c, f := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": u.URL}})
+	c, f := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": u.URL}})
 	r, err := newRouter(f, true)
 	if err != nil {
 		t.Fatal(err)
@@ -314,10 +357,10 @@ func TestPrivateAdminSocketAndGracefulShutdown(t *testing.T) {
 	if err := adminCommand(c.AdminSocket, "status", "", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := adminCommand(c.AdminSocket, "switch", "alpha", "normal", 1); err != nil {
+	if err := adminCommand(c.AdminSocket, "switch", "bsc", "normal", 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := adminCommand(c.AdminSocket, "switch", "alpha", "normal", 1); err == nil {
+	if err := adminCommand(c.AdminSocket, "switch", "bsc", "normal", 1); err == nil {
 		t.Fatal("CLI silently retried stale switch")
 	}
 	if err := adminCommand(c.AdminSocket, "reload", "", "", 2); err != nil {
@@ -351,12 +394,12 @@ func TestTLSVerificationAndBodyLimits(t *testing.T) {
 	var calls atomic.Int32
 	u := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1) }))
 	defer u.Close()
-	_, s := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": u.URL}})
-	code, _, _ := post(s.Client(), s.URL+"/alpha", "{}")
+	_, s := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": u.URL}})
+	code, _, _ := post(s.Client(), s.URL+"/bsc", "{}")
 	if code != 502 || calls.Load() != 0 {
 		t.Fatal("untrusted TLS accepted")
 	}
-	code, _, _ = post(s.Client(), s.URL+"/alpha", strings.Repeat("x", (1<<20)+1))
+	code, _, _ = post(s.Client(), s.URL+"/bsc", strings.Repeat("x", (1<<20)+1))
 	if code != 413 || calls.Load() != 0 {
 		t.Fatal("oversized body dispatched")
 	}
@@ -373,7 +416,7 @@ func BenchmarkTwoLayerLoopback(b *testing.B) {
 		fmt.Fprint(w, `{"result":"0x1"}`)
 	}))
 	defer up.Close()
-	_, f2 := fixtureConfig(b, map[string]map[string]string{"alpha": {"normal": up.URL}})
+	_, f2 := fixtureConfig(b, map[string]map[string]string{"bsc": {"normal": up.URL}})
 	r2, err := newRouter(f2, true)
 	if err != nil {
 		b.Fatal(err)
@@ -381,7 +424,7 @@ func BenchmarkTwoLayerLoopback(b *testing.B) {
 	defer r2.close()
 	s2 := httptest.NewServer(r2)
 	defer s2.Close()
-	_, f1 := fixtureConfig(b, map[string]map[string]string{"alpha": {"normal": s2.URL + "/alpha"}})
+	_, f1 := fixtureConfig(b, map[string]map[string]string{"bsc": {"normal": s2.URL + "/bsc"}})
 	r1, err := newRouter(f1, true)
 	if err != nil {
 		b.Fatal(err)
@@ -389,7 +432,7 @@ func BenchmarkTwoLayerLoopback(b *testing.B) {
 	defer r1.close()
 	s1 := httptest.NewServer(r1)
 	defer s1.Close()
-	for name, u := range map[string]string{"direct": up.URL, "two_layer": s1.URL + "/alpha"} {
+	for name, u := range map[string]string{"direct": up.URL, "two_layer": s1.URL + "/bsc"} {
 		b.Run(name, func(b *testing.B) {
 			client := &http.Client{Timeout: 5 * time.Second}
 			for i := 0; i < b.N; i++ {
@@ -406,7 +449,7 @@ func BenchmarkTwoLayerLoopback(b *testing.B) {
 // the chain deadline: ServeHTTP's connection read deadline unblocks the read.
 func TestStalledRequestBodyReleasesAdmission(t *testing.T) {
 	u := textServer(t, "{}")
-	r, _ := fixtureRouter(t, map[string]map[string]string{"gamma": {"normal": u.URL}})
+	r, _ := fixtureRouter(t, map[string]map[string]string{"eth": {"normal": u.URL}})
 	done := make(chan struct{})
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer close(done)
@@ -420,7 +463,7 @@ func TestStalledRequestBodyReleasesAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	if _, err := fmt.Fprintf(conn, "POST /gamma HTTP/1.1\r\nHost: fixture\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{"); err != nil {
+	if _, err := fmt.Fprintf(conn, "POST /eth HTTP/1.1\r\nHost: fixture\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -430,7 +473,7 @@ func TestStalledRequestBodyReleasesAdmission(t *testing.T) {
 		<-done
 		t.Fatal("stalled HTTP body ignored the chain deadline")
 	}
-	if len(r.admission["gamma"].active) != 0 {
+	if len(r.admission["eth"].active) != 0 {
 		t.Fatal("stalled HTTP body leaked admission")
 	}
 }

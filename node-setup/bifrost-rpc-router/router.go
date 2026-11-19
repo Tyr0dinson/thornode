@@ -25,7 +25,7 @@ type metrics struct {
 
 // status records an upstream reply's class and reports whether the status is
 // itself a provider failure. Other 4xx/5xx replies are ordinary RPC answers
-// (some daemons send JSON-RPC errors as HTTP 500) and must not drive the alert.
+// (bitcoind sends JSON-RPC errors as HTTP 500) and must not drive the alert.
 func (m *metrics) status(code int) bool {
 	switch {
 	case code >= 400 && code < 500:
@@ -58,7 +58,12 @@ type upstream struct {
 	timeout  time.Duration
 	heads    headCache
 	ahead    readAhead
+	utxo     utxoAhead
+	tip      tipAhead
 	calls    callAhead
+	hold     holdAhead
+	demand   receiptDemand
+	batches  atomic.Uint64 // Header batches answered here.
 }
 
 type snapshot struct {
@@ -209,7 +214,7 @@ func rewriteUpstream(out, in *http.Request, target *url.URL, t Target, endpoint 
 	out.URL.RawPath, out.URL.RawQuery = "", in.URL.RawQuery
 	out.GetBody, out.Trailer = nil, nil
 	if out.Method == http.MethodGet && (out.Body == nil || out.Body == http.NoBody) {
-		// A GET may be a broadcast on some chains. A non-rewindable empty body disables
+		// GET may broadcast (CometBFT). A non-rewindable empty body disables
 		// Transport's implicit replay on a reused connection. Its GET body
 		// probe still emits no payload, Content-Length or chunked framing.
 		out.Body = io.NopCloser(strings.NewReader(""))
@@ -330,7 +335,7 @@ func (r *router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			u.stats.requests.Add(1)
 			defer func() { u.stats.durationNS.Add(uint64(time.Since(start))) }()
 			live := s.catalog.config.Chains[name]
-			if live.HeadCacheMS > 0 && u.serveCached(w, req, live) {
+			if live.HeadCacheMS > 0 && u.serveCached(w, req, live) || live.UTXOAheadMS > 0 && u.serveUTXO(w, req, live) {
 				return
 			}
 			u.proxy.ServeHTTP(w, req)
@@ -358,9 +363,9 @@ func (r *router) metrics(w http.ResponseWriter) {
 				fmt.Fprintf(w, "rpc_router_requests_total{%s} %d\nrpc_router_errors_total{%s} %d\nrpc_router_duration_seconds_sum{%s} %f\n", labels, u.stats.requests.Load(), labels, u.stats.errors.Load(), labels, float64(u.stats.durationNS.Load())/1e9)
 				fmt.Fprintf(w, "rpc_router_client_canceled_total{%s} %d\nrpc_router_upstream_status_total{%s,class=\"4xx\"} %d\nrpc_router_upstream_status_total{%s,class=\"5xx\"} %d\n", labels, u.stats.canceled.Load(), labels, u.stats.status4xx.Load(), labels, u.stats.status5xx.Load())
 				// Requests answered without a provider call; requests_total includes them.
-				fmt.Fprintf(w, "rpc_router_head_cache_hits_total{%s} %d\n", labels, u.heads.hits.Load())
+				fmt.Fprintf(w, "rpc_router_head_cache_hits_total{%s} %d\nrpc_router_header_batches_total{%s} %d\n", labels, u.heads.hits.Load(), labels, u.batches.Load())
 				// Read-ahead: early provider calls made, and how many were then asked for.
-				fmt.Fprintf(w, "rpc_router_read_ahead_fetches_total{%s} %d\nrpc_router_read_ahead_hits_total{%s} %d\n", labels, u.ahead.fetches.Load(), labels, u.ahead.hits.Load())
+				fmt.Fprintf(w, "rpc_router_read_ahead_fetches_total{%s} %d\nrpc_router_read_ahead_hits_total{%s} %d\nrpc_router_held_blocks_total{%s} %d\nrpc_router_hold_inspected_total{%s} %d\nrpc_router_hold_resets_total{%s} %d\nrpc_router_hold_watched_addresses{%s} %d\n", labels, u.ahead.fetches.Load(), labels, u.ahead.hits.Load(), labels, u.hold.holds.Load(), labels, u.hold.seen.Load(), labels, u.hold.resets.Load(), labels, len(u.calls.watched()))
 			}
 		}
 	}

@@ -1,0 +1,411 @@
+# Template: the P1 gateway and one P2 adapter (BASE shown) in namespace
+# rpc-router. Repeat the adapter-base objects for each chain you give its own
+# adapter, or let ../tools/p2-split/split.py generate them.
+#
+# Replace before applying:
+#   - the image reference (build it with `make image`, pin it by digest; with a
+#     registry, use its name and drop imagePullPolicy: Never);
+#   - the chain blocks in both ConfigMaps (see examples/ for every option);
+#   - the Bifrost namespace and labels in bifrost-gateway-ingress, if yours
+#     differ from a standard node-launcher install;
+#   - the namespaces of the TRON and GAIA proxies in the gateway's egress rule.
+#
+# Target files hold provider URLs and headers, so they live in two Secrets you
+# create yourself and that are not part of this template:
+#   gateway-targets: <chain>-native-rpc.json (the chain's normal provider) and
+#                    <chain>-adapter-rpc.json ({"url": "http://adapter-<chain>.rpc-router.svc:8080/<chain>", "allow_http": true})
+#   adapter-targets: <chain>-primary-rpc.json, <chain>-alternate-rpc.json
+#
+# Order: apply, run both -initialize Jobs once, wait for the Deployments to be
+# ready, check each chain through both layers, then point Bifrost's chain RPC
+# hosts at http://gateway.rpc-router.svc:8080/<chain> in one watched restart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+data:
+  config.json: |
+    {
+      "listen": "0.0.0.0:8080",
+      "admin_socket": "/runtime/private/control.sock",
+      "state_file": "/state/private/routes.json",
+      "chains": {
+        "base": {
+          "default": "native", "active": 32, "waiting": 32,
+          "timeout_seconds": 35, "queue_seconds": 1, "max_request_bytes": 1048576,
+          "endpoints": {"rpc": {"path": "/base"}},
+          "backends": {
+            "native": {"rpc": "/etc/router/targets/base-native-rpc.json"},
+            "adapter": {"rpc": "/etc/router/targets/base-adapter-rpc.json"}
+          }
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: adapter-base
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter, rpc-router/chain: base}
+data:
+  config.json: |
+    {
+      "listen": "0.0.0.0:8080",
+      "admin_socket": "/runtime/private/control.sock",
+      "state_file": "/state/private/routes.json",
+      "chains": {
+        "base": {
+          "default": "primary", "active": 32, "waiting": 32,
+          "timeout_seconds": 25, "queue_seconds": 2, "max_request_bytes": 1048576,
+          "head_cache_ms": 1000, "read_ahead_blocks": 4, "read_ahead_headers": true, "call_ahead": true,
+          "endpoints": {"rpc": {"path": "/base"}},
+          "backends": {
+            "primary": {"rpc": "/etc/router/targets/base-primary-rpc.json"},
+            "alternate": {"rpc": "/etc/router/targets/base-alternate-rpc.json"}
+          }
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gateway-state
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 128Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: adapter-base-state
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter, rpc-router/chain: base}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 128Mi
+---
+# Run once before the first start, and again only to recreate lost state.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gateway-initialize
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: router
+          image: localhost/bifrost-rpc-router@sha256:REPLACE_WITH_YOUR_BUILD
+          imagePullPolicy: Never
+          args: ["-config", "/etc/router/config/config.json", "-command", "init"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/router/config, readOnly: true}
+            - {name: targets, mountPath: /etc/router/targets, readOnly: true}
+            - {name: state, mountPath: /state}
+            - {name: runtime, mountPath: /runtime}
+      volumes:
+        - {name: config, configMap: {name: gateway}}
+        - {name: targets, secret: {secretName: gateway-targets, defaultMode: 0440}}
+        - {name: state, persistentVolumeClaim: {claimName: gateway-state}}
+        - {name: runtime, emptyDir: {medium: Memory, sizeLimit: 1Mi}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: adapter-base-initialize
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter, rpc-router/chain: base}
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: router
+          image: localhost/bifrost-rpc-router@sha256:REPLACE_WITH_YOUR_BUILD
+          imagePullPolicy: Never
+          args: ["-config", "/etc/router/config/config.json", "-command", "init"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/router/config, readOnly: true}
+            - {name: targets, mountPath: /etc/router/targets, readOnly: true}
+            - {name: state, mountPath: /state}
+            - {name: runtime, mountPath: /runtime}
+      volumes:
+        - {name: config, configMap: {name: adapter-base}}
+        # Mount only this chain's keys, so one adapter never sees another
+        # chain's credentials.
+        - name: targets
+          secret:
+            secretName: adapter-targets
+            defaultMode: 0440
+            items:
+              - {key: base-primary-rpc.json, path: base-primary-rpc.json}
+              - {key: base-alternate-rpc.json, path: base-alternate-rpc.json}
+        - {name: state, persistentVolumeClaim: {claimName: adapter-base-state}}
+        - {name: runtime, emptyDir: {medium: Memory, sizeLimit: 1Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+spec:
+  replicas: 1
+  strategy: {type: Recreate} # The state volume is exclusive.
+  selector:
+    matchLabels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: router
+          image: localhost/bifrost-rpc-router@sha256:REPLACE_WITH_YOUR_BUILD
+          imagePullPolicy: Never
+          args: ["-config", "/etc/router/config/config.json"]
+          ports: [{name: http, containerPort: 8080}]
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: "2", memory: 384Mi}
+          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 2, timeoutSeconds: 1, failureThreshold: 30}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 15, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5, timeoutSeconds: 2}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/router/config, readOnly: true}
+            - {name: targets, mountPath: /etc/router/targets, readOnly: true}
+            - {name: state, mountPath: /state}
+            - {name: runtime, mountPath: /runtime}
+      volumes:
+        - {name: config, configMap: {name: gateway}}
+        - {name: targets, secret: {secretName: gateway-targets, defaultMode: 0440}}
+        - {name: state, persistentVolumeClaim: {claimName: gateway-state}}
+        - {name: runtime, emptyDir: {medium: Memory, sizeLimit: 1Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adapter-base
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter, rpc-router/chain: base}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter, rpc-router/chain: base}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter, rpc-router/chain: base}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: router
+          image: localhost/bifrost-rpc-router@sha256:REPLACE_WITH_YOUR_BUILD
+          imagePullPolicy: Never
+          args: ["-config", "/etc/router/config/config.json"]
+          ports: [{name: http, containerPort: 8080}]
+          # UTXO adapters with utxo_ahead_ms hold whole blocks: give them about 1Gi.
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {cpu: "2", memory: 512Mi}
+          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 2, timeoutSeconds: 1, failureThreshold: 30}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 15, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5, timeoutSeconds: 2}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/router/config, readOnly: true}
+            - {name: targets, mountPath: /etc/router/targets, readOnly: true}
+            - {name: state, mountPath: /state}
+            - {name: runtime, mountPath: /runtime}
+      volumes:
+        - {name: config, configMap: {name: adapter-base}}
+        - name: targets
+          secret:
+            secretName: adapter-targets
+            defaultMode: 0440
+            items:
+              - {key: base-primary-rpc.json, path: base-primary-rpc.json}
+              - {key: base-alternate-rpc.json, path: base-alternate-rpc.json}
+        - {name: state, persistentVolumeClaim: {claimName: adapter-base-state}}
+        - {name: runtime, emptyDir: {medium: Memory, sizeLimit: 1Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adapter-base
+  namespace: rpc-router
+  labels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter, rpc-router/chain: base}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter, rpc-router/chain: base}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+# Only Bifrost may call the gateway's data port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bifrost-gateway-ingress
+  namespace: rpc-router
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: thornode}}
+          podSelector: {matchLabels: {app-name: bifrost}}
+      ports: [{protocol: TCP, port: 8080}]
+---
+# The gateway reaches DNS, public HTTPS providers, its adapters and the TRON and
+# GAIA proxies; metrics are scraped from the monitoring namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway
+  namespace: rpc-router
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: prometheus-system}}
+      ports: [{protocol: TCP, port: 8080}]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]
+      ports: [{protocol: TCP, port: 443}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: tron}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: tron-rpc-proxy}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gaia-rpc-proxy}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: gaia-rpc-proxy}}
+      ports: [{protocol: TCP, port: 8080}]
+---
+# Adapters take traffic from the gateway only and reach DNS and public HTTPS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chain-adapter
+  namespace: rpc-router
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: prometheus-system}}
+      ports: [{protocol: TCP, port: 8080}]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]
+      ports: [{protocol: TCP, port: 443}]
+---
+# Needs the Prometheus Operator; drop these two if you scrape another way.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gateway
+  namespace: rpc-router
+  labels: {release: prometheus}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: gateway}
+  endpoints: [{port: http, path: /metrics, interval: 30s, scrapeTimeout: 5s}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chain-adapter
+  namespace: rpc-router
+  labels: {release: prometheus}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: rpc-router, app.kubernetes.io/component: chain-adapter}
+  endpoints: [{port: http, path: /metrics, interval: 30s, scrapeTimeout: 5s}]

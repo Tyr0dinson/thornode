@@ -34,7 +34,7 @@ func writeJSON(t testing.TB, filename string, v any) {
 
 func fixtureConfig(t testing.TB, providers map[string]map[string]string) (Config, string) {
 	t.Helper()
-	// A short path keeps the Unix socket within the platform's length limit.
+	// Short Unix socket path limits on some platforms also apply to the validated configuration.
 	dir, err := os.MkdirTemp("/tmp", "rpc-router-test-")
 	if err != nil {
 		t.Fatal(err)
@@ -104,8 +104,8 @@ func TestTwoLayersPerChainKeepAliveSwitchAndRollback(t *testing.T) {
 	normal := textServer(t, "normal")
 	a := textServer(t, "provider-a")
 	b := textServer(t, "provider-b")
-	p2, s2 := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": a.URL, "alternate": b.URL}, "beta": {"normal": a.URL, "alternate": b.URL}})
-	p1, s1 := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": normal.URL, "adapter": s2.URL + "/alpha"}, "beta": {"normal": normal.URL, "adapter": s2.URL + "/beta"}})
+	p2, s2 := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": a.URL, "alternate": b.URL}, "avax": {"normal": a.URL, "alternate": b.URL}})
+	p1, s1 := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": normal.URL, "adapter": s2.URL + "/bsc"}, "avax": {"normal": normal.URL, "adapter": s2.URL + "/avax"}})
 	client := s1.Client()
 	transport := client.Transport.(*http.Transport).Clone()
 	transport.MaxConnsPerHost = 1
@@ -131,15 +131,15 @@ func TestTwoLayersPerChainKeepAliveSwitchAndRollback(t *testing.T) {
 			t.Fatalf("%s got %d %s %v", chain, resp.StatusCode, data, err)
 		}
 	}
-	check("alpha", "normal")
-	switchRoute(t, p1, "alpha", "adapter")
-	check("alpha", "provider-a")
-	check("beta", "normal")
-	switchRoute(t, p2, "alpha", "alternate")
-	check("alpha", "provider-b")
-	check("beta", "normal")
-	switchRoute(t, p1, "alpha", "normal")
-	check("alpha", "normal")
+	check("bsc", "normal")
+	switchRoute(t, p1, "bsc", "adapter")
+	check("bsc", "provider-a")
+	check("avax", "normal")
+	switchRoute(t, p2, "bsc", "alternate")
+	check("bsc", "provider-b")
+	check("avax", "normal")
+	switchRoute(t, p1, "bsc", "normal")
+	check("bsc", "normal")
 }
 
 func TestSwitchDrainsInflightWithoutReplay(t *testing.T) {
@@ -153,15 +153,15 @@ func TestSwitchDrainsInflightWithoutReplay(t *testing.T) {
 	}))
 	defer old.Close()
 	next := textServer(t, "new")
-	r, s := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": old.URL, "next": next.URL}})
+	r, s := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": old.URL, "next": next.URL}})
 	done := make(chan string, 1)
 	go func() {
-		_, body, _ := post(s.Client(), s.URL+"/alpha", `{"method":"eth_sendRawTransaction"}`)
+		_, body, _ := post(s.Client(), s.URL+"/bsc", `{"method":"eth_sendRawTransaction"}`)
 		done <- body
 	}()
 	<-entered
-	switchRoute(t, r, "alpha", "next")
-	code, body, err := post(s.Client(), s.URL+"/alpha", "new read")
+	switchRoute(t, r, "bsc", "next")
+	code, body, err := post(s.Client(), s.URL+"/bsc", "new read")
 	if code != 200 || body != "new" || err != nil {
 		t.Fatalf("new: %d %q %v", code, body, err)
 	}
@@ -184,10 +184,10 @@ func TestBroadcastAmbiguityDoesNotRetryOrSwitch(t *testing.T) {
 	defer up.Close()
 	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { other.Add(1) }))
 	defer backup.Close()
-	p2, s2 := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": up.URL, "backup": backup.URL}})
-	p1, s1 := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": s2.URL + "/alpha", "backup": backup.URL}})
+	p2, s2 := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": up.URL, "backup": backup.URL}})
+	p1, s1 := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": s2.URL + "/bsc", "backup": backup.URL}})
 	body := ` {"id":1,"method":"eth_sendRawTransaction","params":["0xsynthetic"]} `
-	req, _ := http.NewRequest("POST", s1.URL+"/alpha", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", s1.URL+"/bsc", strings.NewReader(body))
 	req.Header.Set("Idempotency-Key", "do-not-retry")
 	resp, err := s1.Client().Do(req)
 	if err != nil {
@@ -198,14 +198,87 @@ func TestBroadcastAmbiguityDoesNotRetryOrSwitch(t *testing.T) {
 	if resp.StatusCode != 502 || calls.Load() != 1 || other.Load() != 0 || payload != body {
 		t.Fatalf("unsafe replay: status=%d calls=%d backup=%d payload=%q", resp.StatusCode, calls.Load(), other.Load(), payload)
 	}
-	if p1.current.Load().state.Routes["alpha"] != "normal" || p2.current.Load().state.Routes["alpha"] != "normal" {
+	if p1.current.Load().state.Routes["bsc"] != "normal" || p2.current.Load().state.Routes["bsc"] != "normal" {
 		t.Fatal("route changed on ambiguity")
+	}
+}
+
+func TestExistingPolicyAdaptersRetainPathsHistoryAndPayloads(t *testing.T) {
+	var calls atomic.Int32
+	policy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		body, _ := io.ReadAll(r.Body)
+		switch r.URL.Path {
+		case "/wallet/gettransactioninfobyid":
+			fmt.Fprint(w, `{"source":"external-history"}`)
+		case "/wallet/broadcasttransaction":
+			fmt.Fprint(w, string(body))
+		case "/jsonrpc":
+			fmt.Fprint(w, `{"source":"local-finalized"}`)
+		case "/gaia/block":
+			if r.URL.RawQuery != "height=12" {
+				t.Error("lost height")
+			}
+			fmt.Fprint(w, `{"source":"gaia-archive"}`)
+		case "/base":
+			fmt.Fprint(w, `{"source":"base-provider"}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer policy.Close()
+	c, file := fixtureConfig(t, map[string]map[string]string{"tron": {"normal": policy.URL}, "gaia": {"normal": policy.URL + "/gaia"}, "base": {"normal": policy.URL + "/base"}})
+	tron := c.Chains["tron"]
+	tron.Endpoints = map[string]Endpoint{"rest": {Path: "/tron-rest", Suffix: true}, "rpc": {Path: "/tron-rpc"}}
+	restFile := tron.Backends["normal"]["rpc"]
+	rpcFile := filepath.Join(filepath.Dir(file), "tron-rpc.json")
+	writeJSON(t, rpcFile, Target{URL: policy.URL + "/jsonrpc", AllowHTTP: true})
+	tron.Backends["normal"] = map[string]string{"rest": restFile, "rpc": rpcFile}
+	c.Chains["tron"] = tron
+	writeJSON(t, file, c)
+	r, err := newRouter(file, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	s2 := httptest.NewServer(r)
+	defer s2.Close()
+	c1, f1 := fixtureConfig(t, map[string]map[string]string{"tron": {"normal": s2.URL + "/tron-rest"}, "gaia": {"normal": s2.URL + "/gaia"}, "base": {"normal": s2.URL + "/base"}})
+	tr := c1.Chains["tron"]
+	tr.Endpoints = tron.Endpoints
+	f := filepath.Join(filepath.Dir(f1), "rpc.json")
+	writeJSON(t, f, Target{URL: s2.URL + "/tron-rpc", AllowHTTP: true})
+	tr.Backends["normal"] = map[string]string{"rest": tr.Backends["normal"]["rpc"], "rpc": f}
+	c1.Chains["tron"] = tr
+	writeJSON(t, f1, c1)
+	r1, err := newRouter(f1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r1.close()
+	s1 := httptest.NewServer(r1)
+	defer s1.Close()
+	for _, test := range []struct{ path, body, want string }{
+		{"/tron-rest/wallet/gettransactioninfobyid", "{}", `{"source":"external-history"}`},
+		{"/tron-rest/wallet/broadcasttransaction", ` { "synthetic": "exact bytes" } `, ` { "synthetic": "exact bytes" } `},
+		{"/tron-rpc", "{}", `{"source":"local-finalized"}`},
+		{"/gaia/block?height=12", "", `{"source":"gaia-archive"}`},
+		{"/base", "{}", `{"source":"base-provider"}`},
+	} {
+		code, body, err := post(s1.Client(), s1.URL+test.path, test.body)
+		if err != nil || code != 200 || body != test.want {
+			t.Fatalf("%s: %d %q %v", test.path, code, body, err)
+		}
+	}
+	if calls.Load() != 5 {
+		t.Fatalf("extra chain calls: %d", calls.Load())
 	}
 }
 
 func TestStateCASPersistenceAndFailure(t *testing.T) {
 	u := textServer(t, "ok")
-	_, file := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": u.URL, "alternate": u.URL}})
+	_, file := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": u.URL, "alternate": u.URL}})
 	if _, err := newRouter(file, false); err == nil {
 		t.Fatal("missing state silently initialized")
 	}
@@ -217,8 +290,8 @@ func TestStateCASPersistenceAndFailure(t *testing.T) {
 		second.close()
 		t.Fatal("state shared by processes")
 	}
-	switchRoute(t, r, "alpha", "alternate")
-	if w := adminRequest(r, "/switch", `{"chain":"alpha","backend":"normal"}`, 1); w.Code != 412 {
+	switchRoute(t, r, "bsc", "alternate")
+	if w := adminRequest(r, "/switch", `{"chain":"bsc","backend":"normal"}`, 1); w.Code != 412 {
 		t.Fatal("stale revision accepted")
 	}
 	r.close()
@@ -227,22 +300,22 @@ func TestStateCASPersistenceAndFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.close()
-	if r.current.Load().state.Routes["alpha"] != "alternate" {
+	if r.current.Load().state.Routes["bsc"] != "alternate" {
 		t.Fatal("restart lost route")
 	}
 	r.save = func(string, State) error { return errors.New("disk fault") }
-	if w := adminRequest(r, "/switch", `{"chain":"alpha","backend":"normal"}`, 2); w.Code != 503 {
+	if w := adminRequest(r, "/switch", `{"chain":"bsc","backend":"normal"}`, 2); w.Code != 503 {
 		t.Fatal("persist failure accepted")
 	}
 	// A rejected write costs that one change; dispatch and readiness continue.
-	for _, p := range []string{"/alpha", "/readyz"} {
+	for _, p := range []string{"/bsc", "/readyz"} {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest("GET", p, nil))
 		if w.Code == 503 {
 			t.Fatalf("state fault stopped %s", p)
 		}
 	}
-	if got := r.current.Load().state; got.Routes["alpha"] != "alternate" || got.Version != 2 {
+	if got := r.current.Load().state; got.Routes["bsc"] != "alternate" || got.Version != 2 {
 		t.Fatal("failed commit changed route or revision")
 	}
 	if r.faults.Load() != 1 {
@@ -253,7 +326,7 @@ func TestStateCASPersistenceAndFailure(t *testing.T) {
 func TestHotReloadRetainsRouteAndRejectsInvalidCatalog(t *testing.T) {
 	a := textServer(t, "a")
 	b := textServer(t, "b")
-	c, file := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": a.URL, "alternate": a.URL}})
+	c, file := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": a.URL, "alternate": a.URL}})
 	r, err := newRouter(file, true)
 	if err != nil {
 		t.Fatal(err)
@@ -261,22 +334,22 @@ func TestHotReloadRetainsRouteAndRejectsInvalidCatalog(t *testing.T) {
 	defer r.close()
 	s := httptest.NewServer(r)
 	defer s.Close()
-	switchRoute(t, r, "alpha", "alternate")
-	writeJSON(t, c.Chains["alpha"].Backends["alternate"]["rpc"], Target{URL: b.URL, AllowHTTP: true})
+	switchRoute(t, r, "bsc", "alternate")
+	writeJSON(t, c.Chains["bsc"].Backends["alternate"]["rpc"], Target{URL: b.URL, AllowHTTP: true})
 	w := adminRequest(r, "/reload", "{}", 2)
 	if w.Code != 200 {
 		t.Fatalf("reload %d %s", w.Code, w.Body.String())
 	}
-	_, body, _ := post(s.Client(), s.URL+"/alpha", "{}")
+	_, body, _ := post(s.Client(), s.URL+"/bsc", "{}")
 	if body != "b" {
 		t.Fatal("reload did not replace target")
 	}
-	delete(c.Chains["alpha"].Backends, "alternate")
+	delete(c.Chains["bsc"].Backends, "alternate")
 	writeJSON(t, file, c)
 	if w := adminRequest(r, "/reload", "{}", 3); w.Code != 400 {
 		t.Fatal("removed active route")
 	}
-	_, body, _ = post(s.Client(), s.URL+"/alpha", "{}")
+	_, body, _ = post(s.Client(), s.URL+"/bsc", "{}")
 	if body != "b" {
 		t.Fatal("invalid reload changed live route")
 	}
@@ -288,14 +361,14 @@ func TestPrefetch32AndChainIsolation(t *testing.T) {
 	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { entered <- struct{}{}; <-release; fmt.Fprint(w, "ok") }))
 	defer blocked.Close()
 	fast := textServer(t, "fast")
-	p2, s2 := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": blocked.URL}, "beta": {"normal": fast.URL}})
-	p1, s1 := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": s2.URL + "/alpha"}, "beta": {"normal": s2.URL + "/beta"}})
+	p2, s2 := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": blocked.URL}, "avax": {"normal": fast.URL}})
+	p1, s1 := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": s2.URL + "/bsc"}, "avax": {"normal": s2.URL + "/avax"}})
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			code, _, err := post(s1.Client(), s1.URL+"/alpha", "{}")
+			code, _, err := post(s1.Client(), s1.URL+"/bsc", "{}")
 			if err != nil || code != 200 {
 				t.Errorf("prefetch: %d %v", code, err)
 			}
@@ -308,12 +381,12 @@ func TestPrefetch32AndChainIsolation(t *testing.T) {
 			t.Fatal("32 requests did not reach upstream")
 		}
 	}
-	if len(p1.admission["alpha"].active) != 32 || len(p2.admission["alpha"].active) != 32 {
+	if len(p1.admission["bsc"].active) != 32 || len(p2.admission["bsc"].active) != 32 {
 		t.Error("prefetch did not stay concurrent")
 	}
-	code, body, err := post(s1.Client(), s1.URL+"/beta", "{}")
+	code, body, err := post(s1.Client(), s1.URL+"/avax", "{}")
 	if code != 200 || body != "fast" || err != nil {
-		t.Error("busy ALPHA blocked BETA")
+		t.Error("busy BSC blocked AVAX")
 	}
 	code, _, err = post(s1.Client(), s1.URL+"/switch", "{}")
 	if code != 404 || err != nil {
@@ -340,8 +413,8 @@ func TestHeadersPathsAndRedirects(t *testing.T) {
 		w.WriteHeader(302)
 	}))
 	defer u.Close()
-	c, file := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": u.URL + "/secret/rpc"}})
-	writeJSON(t, c.Chains["alpha"].Backends["normal"]["rpc"], Target{URL: u.URL + "/secret/rpc", AllowHTTP: true, Headers: map[string]string{"Authorization": "Bearer target"}})
+	c, file := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": u.URL + "/secret/rpc"}})
+	writeJSON(t, c.Chains["bsc"].Backends["normal"]["rpc"], Target{URL: u.URL + "/secret/rpc", AllowHTTP: true, Headers: map[string]string{"Authorization": "Bearer target"}})
 	r, err := newRouter(file, true)
 	if err != nil {
 		t.Fatal(err)
@@ -349,7 +422,7 @@ func TestHeadersPathsAndRedirects(t *testing.T) {
 	defer r.close()
 	s := httptest.NewServer(r)
 	defer s.Close()
-	req, _ := http.NewRequest("POST", s.URL+"/alpha", bytes.NewReader([]byte("{}")))
+	req, _ := http.NewRequest("POST", s.URL+"/bsc", bytes.NewReader([]byte("{}")))
 	for _, key := range []string{"Authorization", "Cookie", "Idempotency-Key", "X-Forwarded-For"} {
 		req.Header.Set(key, "caller")
 	}
@@ -363,7 +436,7 @@ func TestHeadersPathsAndRedirects(t *testing.T) {
 	if resp.StatusCode != 502 || resp.Header.Get("Location") != "" || calls.Load() != 1 {
 		t.Fatal("redirect escaped")
 	}
-	for _, p := range []string{"/alpha/../readyz", "/alpha/%2fsecret", "/alpha//secret"} {
+	for _, p := range []string{"/bsc/../readyz", "/bsc/%2fsecret", "/bsc//secret"} {
 		code, _, _ := post(s.Client(), s.URL+p, "{}")
 		if code != 400 {
 			t.Fatalf("unsafe path %s: %d", p, code)
@@ -396,9 +469,9 @@ func TestDeadlineCancellationAndAdmission(t *testing.T) {
 		close(canceled)
 	}))
 	defer u.Close()
-	_, s := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": u.URL}})
+	_, s := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": u.URL}})
 	ctx, cancel = context.WithCancel(context.Background())
-	req, _ := http.NewRequestWithContext(ctx, "POST", s.URL+"/alpha", strings.NewReader("{}"))
+	req, _ := http.NewRequestWithContext(ctx, "POST", s.URL+"/bsc", strings.NewReader("{}"))
 	done := make(chan struct{})
 	go func() {
 		resp, _ := s.Client().Do(req)

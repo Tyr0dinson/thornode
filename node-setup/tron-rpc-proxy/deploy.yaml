@@ -1,0 +1,190 @@
+# Template: 32-active proxy; auto_failback_enabled gives one-minute automatic
+# recovery after fallback. Replace the namespace, the local TRON service names
+# and block_floor with your own.
+# Startup/manual external mode still requires explicit local admission.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tron-rpc-proxy
+  namespace: tron
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 8Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tron-rpc-proxy
+  namespace: tron
+data:
+  config.json: |
+    {
+      "listen": "0.0.0.0:8080",
+      "admin_socket": "/run/tron-proxy/admin.sock",
+      "database": "/data/journal.db",
+      "genesis": "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc",
+      "local_api": "http://tron-node.tron.svc.cluster.local:8090",
+      "local_rpc": "http://tron-node.tron.svc.cluster.local:8555/jsonrpc",
+      "external_api_file": "/etc/tron-proxy/credentials/api",
+      "external_rpc_file": "/etc/tron-proxy/credentials/rpc",
+      "broadcast_enabled": true,
+      "auto_failback_enabled": true,
+      "block_floor": 0,
+      "timeout_seconds": 4,
+      "poll_seconds": 10
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tron-rpc-proxy
+  namespace: tron
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tron-rpc-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tron-rpc-proxy
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: proxy
+          image: localhost/tron-rpc-proxy:REPLACE_WITH_YOUR_BUILD
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+          volumeMounts:
+            - name: state
+              mountPath: /data
+            - name: runtime
+              mountPath: /run/tron-proxy
+            - name: config
+              mountPath: /etc/tron-proxy/config.json
+              subPath: config.json
+              readOnly: true
+            - name: credentials
+              mountPath: /etc/tron-proxy/credentials
+              readOnly: true
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: tron-rpc-proxy
+        - name: runtime
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: config
+          configMap:
+            name: tron-rpc-proxy
+        - name: credentials
+          secret:
+            secretName: tron-rpc-proxy-upstream
+            defaultMode: 0440
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tron-rpc-proxy
+  namespace: tron
+spec:
+  selector:
+    app.kubernetes.io/name: tron-rpc-proxy
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tron-rpc-proxy
+  namespace: tron
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tron-rpc-proxy
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: thornode
+          podSelector:
+            matchLabels:
+              app-name: bifrost
+              thornode-name: thornode
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tron-node
+      ports:
+        - protocol: TCP
+          port: 8090
+        - protocol: TCP
+          port: 8555
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10]
+      ports:
+        - protocol: TCP
+          port: 443

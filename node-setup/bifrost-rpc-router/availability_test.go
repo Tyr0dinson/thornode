@@ -50,17 +50,17 @@ func get(r *router, path string) (int, string) {
 // the only RPC path for every chain, so it keeps serving the route it has.
 func TestStateWriteFailureKeepsServing(t *testing.T) {
 	u := textServer(t, "ok")
-	r, _ := fixtureRouter(t, map[string]map[string]string{"alpha": {"normal": u.URL, "alternate": u.URL}, "gamma": {"normal": u.URL}})
+	r, _ := fixtureRouter(t, map[string]map[string]string{"bsc": {"normal": u.URL, "alternate": u.URL}, "eth": {"normal": u.URL}})
 	persistOK := r.save
 	r.save = func(string, State) error { return errors.New("disk fault") }
 	revision := r.current.Load().state.Version
-	if w := adminRequest(r, "/switch", `{"chain":"alpha","backend":"alternate"}`, revision); w.Code != 503 {
+	if w := adminRequest(r, "/switch", `{"chain":"bsc","backend":"alternate"}`, revision); w.Code != 503 {
 		t.Fatalf("unpersisted switch reported %d", w.Code)
 	}
-	if got := r.current.Load().state; got.Routes["alpha"] != "normal" || got.Version != revision {
+	if got := r.current.Load().state; got.Routes["bsc"] != "normal" || got.Version != revision {
 		t.Fatalf("failed commit changed live state: %+v", got)
 	}
-	for _, p := range []string{"/alpha", "/gamma"} {
+	for _, p := range []string{"/bsc", "/eth"} {
 		if code, body := get(r, p); code != 200 || body != "ok" {
 			t.Fatalf("%s stopped serving after a state write fault: %d %q", p, code, body)
 		}
@@ -73,10 +73,10 @@ func TestStateWriteFailureKeepsServing(t *testing.T) {
 	}
 	// The operator can retry at the same revision once the disk recovers.
 	r.save = persistOK
-	if w := adminRequest(r, "/switch", `{"chain":"alpha","backend":"alternate"}`, revision); w.Code != 200 {
+	if w := adminRequest(r, "/switch", `{"chain":"bsc","backend":"alternate"}`, revision); w.Code != 200 {
 		t.Fatalf("retry after recovery: %d %s", w.Code, w.Body.String())
 	}
-	if r.current.Load().state.Routes["alpha"] != "alternate" {
+	if r.current.Load().state.Routes["bsc"] != "alternate" {
 		t.Fatal("retry did not switch")
 	}
 }
@@ -84,22 +84,22 @@ func TestStateWriteFailureKeepsServing(t *testing.T) {
 // Editing a target file (for example rotating a credential) and then restarting
 // without a reload must not leave every chain without a router.
 func TestRestartAdoptsCatalogDrift(t *testing.T) {
-	c, file := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": "https://example.invalid/rpc", "alternate": "https://example.invalid/alt"}, "gamma": {"normal": "https://example.invalid/gamma"}})
+	c, file := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": "https://example.invalid/rpc", "alternate": "https://example.invalid/alt"}, "eth": {"normal": "https://example.invalid/eth"}})
 	r, err := newRouter(file, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	switchRoute(t, r, "alpha", "alternate")
+	switchRoute(t, r, "bsc", "alternate")
 	before := r.current.Load().state
 	r.close()
 
-	writeJSON(t, c.Chains["alpha"].Backends["normal"]["rpc"], Target{URL: "https://example.invalid/rotated"})
+	writeJSON(t, c.Chains["bsc"].Backends["normal"]["rpc"], Target{URL: "https://example.invalid/rotated"})
 	r, err = newRouter(file, false)
 	if err != nil {
 		t.Fatalf("restart after target edit: %v", err)
 	}
 	after := r.current.Load().state
-	if after.Routes["alpha"] != "alternate" || after.Routes["gamma"] != "normal" {
+	if after.Routes["bsc"] != "alternate" || after.Routes["eth"] != "normal" {
 		t.Fatalf("drift recovery lost routes: %+v", after.Routes)
 	}
 	if after.Catalog == before.Catalog || after.Catalog != r.current.Load().catalog.digest || after.Version <= before.Version {
@@ -111,30 +111,30 @@ func TestRestartAdoptsCatalogDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := r.current.Load().state; got.Version != after.Version || got.Routes["alpha"] != "alternate" {
+	if got := r.current.Load().state; got.Version != after.Version || got.Routes["bsc"] != "alternate" {
 		t.Fatalf("rebound state not persisted: %+v", got)
 	}
 	r.close()
 
 	// A selected backend that no longer exists falls back to the chain default;
 	// other chains keep their routes.
-	alpha := c.Chains["alpha"]
-	delete(alpha.Backends, "alternate")
-	c.Chains["alpha"] = alpha
+	bsc := c.Chains["bsc"]
+	delete(bsc.Backends, "alternate")
+	c.Chains["bsc"] = bsc
 	writeJSON(t, file, c)
 	r, err = newRouter(file, false)
 	if err != nil {
 		t.Fatalf("restart after backend removal: %v", err)
 	}
 	defer r.close()
-	if got := r.current.Load().state.Routes; got["alpha"] != "normal" || got["gamma"] != "normal" || len(got) != 2 {
+	if got := r.current.Load().state.Routes; got["bsc"] != "normal" || got["eth"] != "normal" || len(got) != 2 {
 		t.Fatalf("removed backend not defaulted: %+v", got)
 	}
 }
 
 // Unreadable state is still refused: there is no route choice to preserve.
 func TestRestartStillRefusesCorruptState(t *testing.T) {
-	c, file := fixtureConfig(t, map[string]map[string]string{"alpha": {"normal": "https://example.invalid/rpc"}})
+	c, file := fixtureConfig(t, map[string]map[string]string{"bsc": {"normal": "https://example.invalid/rpc"}})
 	r, err := newRouter(file, true)
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestRestartStillRefusesCorruptState(t *testing.T) {
 
 // rpc_router_errors_total drives the request-error alert. It must count
 // provider and transport failures only: an ordinary JSON-RPC error reply (which
-// some daemons send as HTTP 500) and a caller that hangs up early are not outages.
+// bitcoind sends as HTTP 500) and a caller that hangs up early are not outages.
 func TestErrorMetricCountsOnlyUpstreamFailures(t *testing.T) {
 	release := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -185,11 +185,11 @@ func TestErrorMetricCountsOnlyUpstreamFailures(t *testing.T) {
 	}))
 	defer upstream.Close()
 	defer close(release)
-	r, s := fixtureRouter(t, map[string]map[string]string{"delta": {"normal": upstream.URL}})
-	labels := []string{`chain="delta"`, `backend="normal"`}
+	r, s := fixtureRouter(t, map[string]map[string]string{"btc": {"normal": upstream.URL}})
+	labels := []string{`chain="btc"`, `backend="normal"`}
 	errorsTotal := func() float64 { return metricSum(t, r, "rpc_router_errors_total", labels...) }
 
-	for _, p := range []string{"/delta/ok", "/delta/rpcerror", "/delta/notfound"} {
+	for _, p := range []string{"/btc/ok", "/btc/rpcerror", "/btc/notfound"} {
 		resp, err := http.Get(s.URL + p)
 		if err != nil {
 			t.Fatal(err)
@@ -209,7 +209,7 @@ func TestErrorMetricCountsOnlyUpstreamFailures(t *testing.T) {
 
 	// The caller decodes the JSON it needs, then closes before HTTP EOF. This is
 	// Bifrost's normal client behaviour.
-	resp, err := http.Get(s.URL + "/delta/slow")
+	resp, err := http.Get(s.URL + "/btc/slow")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestErrorMetricCountsOnlyUpstreamFailures(t *testing.T) {
 	}
 
 	// Provider overload and rate limiting are real failures.
-	for _, p := range []string{"/delta/busy", "/delta/limited"} {
+	for _, p := range []string{"/btc/busy", "/btc/limited"} {
 		resp, err := http.Get(s.URL + p)
 		if err != nil {
 			t.Fatal(err)
@@ -244,7 +244,7 @@ func TestErrorMetricCountsOnlyUpstreamFailures(t *testing.T) {
 	// An unreachable provider is a real failure too.
 	upstream.CloseClientConnections()
 	upstream.Close()
-	if resp, err := http.Get(s.URL + "/delta/ok"); err == nil {
+	if resp, err := http.Get(s.URL + "/btc/ok"); err == nil {
 		resp.Body.Close()
 	}
 	if n := errorsTotal(); n != 3 {

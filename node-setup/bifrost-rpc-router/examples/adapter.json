@@ -15,6 +15,16 @@
         "primary": {"rpc": "/etc/rpc-adapter/targets/base-primary.json"},
         "alternate": {"rpc": "/etc/rpc-adapter/targets/base-alternate.json"}
       }
+    },
+    "ltc": {
+      "default": "primary", "active": 32, "waiting": 32,
+      "timeout_seconds": 25, "queue_seconds": 2, "max_request_bytes": 1048576,
+      "utxo_ahead_ms": 1000,
+      "endpoints": {"rpc": {"path": "/ltc"}},
+      "backends": {
+        "primary": {"rpc": "/etc/rpc-adapter/targets/ltc-primary.json"},
+        "alternate": {"rpc": "/etc/rpc-adapter/targets/ltc-alternate.json"}
+      }
     }
   }
 }

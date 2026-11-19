@@ -1,0 +1,5 @@
+*
+!build/
+!build/gaia-rpc-proxy
+!build/ca-certificates.crt
+!Dockerfile

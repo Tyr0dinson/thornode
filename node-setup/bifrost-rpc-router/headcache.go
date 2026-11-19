@@ -28,7 +28,8 @@ import (
 // The caller sees a head that is at most head_cache_ms older than a fresh call
 // would return, which is indistinguishable from a provider that is that much
 // slower to learn of a block. Everything else, including any request that names
-// a height or hash, any batch, and any failed head query, is forwarded untouched.
+// a height or hash, any batch that is not only header queries (see headerBatch),
+// and any failed head query, is forwarded untouched.
 // Entries belong to one backend's upstream, so a route switch or reload never
 // serves another provider's head.
 
@@ -144,8 +145,8 @@ func (e *headEntry) number() string {
 
 // byNumber answers a header-by-height query when the height is exactly that of
 // a head header this cache handed out recently: the scanner fetches the head,
-// then keeps asking for that same header by its number, once with
-// every block, until it takes a newer head. The
+// then keeps asking for that same header by its number until it takes a newer
+// head. The
 // answer is the head reply it was given. Because the scanner goes on using a
 // head after the cache has moved to a newer one, replies replaced by a
 // background refresh stay answerable here until they are 2 x ttl old. Heights
@@ -260,7 +261,6 @@ func (c *headCache) refresh(key string, old *headEntry, fetch func() (json.RawMe
 // reports whether it did. When it returns false req is unchanged apart from its
 // body having been buffered.
 func (u *upstream) serveCached(w http.ResponseWriter, req *http.Request, ch Chain) bool {
-	ttl, ahead := time.Duration(ch.HeadCacheMS)*time.Millisecond, ch.ReadAheadBlocks
 	if req.Method != http.MethodPost || req.ContentLength <= 0 || req.ContentLength > headRequestLimit || req.URL.RawQuery != "" || req.Header.Get("Content-Encoding") != "" {
 		return false
 	}
@@ -270,37 +270,130 @@ func (u *upstream) serveCached(w http.ResponseWriter, req *http.Request, ch Chai
 		return true
 	}
 	req.Body = io.NopCloser(bytes.NewReader(body))
+	if ch.TipAhead {
+		u.hold.n.Store(int32(ch.HoldBlocks))
+	}
 	q, ok := parseRPC(body)
 	if !ok {
-		return false
-	}
-	var result json.RawMessage
-	if params, isHead := q.head(); isHead {
-		target, header := *req.URL, req.Header.Clone() // The call may outlive this request.
-		result, ok = u.heads.get(req.Context(), req.URL.Path+" "+q.Method+params, ttl, func() (json.RawMessage, bool) {
-			result, ok := u.fetchRPC(&target, header, q.Method, params, headResponseLimit)
-			if ok && strings.HasPrefix(params, `["safe"`) {
-				u.ahead.learnSafe(result)
-			}
-			return result, ok
-		})
-	} else if early, held := u.callTry(ch, req, q); held {
-		result, ok = early, true
-	} else if height, full, isBlock := q.block(); isBlock && ahead > 0 {
-		result, ok = u.readAhead(req, height, full, ahead)
-	} else if suffix, isHeader := q.headerByHeight(); isHeader {
-		if result, ok = u.heads.byNumber(req.URL.Path+" "+q.Method, suffix, q.first, ttl); !ok && ch.ReadAheadHeaders {
-			result, ok = u.readAheadHeader(req, q, suffix, ahead)
+		reply, ok := u.headerBatch(req, ch, body)
+		if ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(reply)
 		}
-	} else {
-		return false
+		return ok
 	}
+	u.demand.note(q)
+	result, ok := u.answer(req, ch, q)
 	if !ok {
 		return false
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(q.ID) + `,"result":` + string(result) + "}\n"))
 	return true
+}
+
+// answer returns the result for one call when the head cache, an early call or
+// the hold has it, exactly as it would be given to a single request.
+func (u *upstream) answer(req *http.Request, ch Chain, q rpcQuery) (result json.RawMessage, ok bool) {
+	ttl, ahead := time.Duration(ch.HeadCacheMS)*time.Millisecond, ch.ReadAheadBlocks
+	if ch.TipAhead {
+		u.tip.use(u, req.URL.Path, ttl)
+	}
+	params, isHead := q.head()
+	if held, isHeld := u.holdAnswer(ch, q.Method, params); isHead && isHeld {
+		u.heads.hits.Add(1)
+		return held, true
+	} else if isHead {
+		target, header := *req.URL, req.Header.Clone() // The call may outlive this request.
+		return u.heads.get(req.Context(), req.URL.Path+" "+q.Method+params, ttl, func() (json.RawMessage, bool) {
+			result, ok := u.fetchRPC(&target, header, q.Method, params, headResponseLimit)
+			if ok && strings.HasPrefix(params, `["safe"`) {
+				u.ahead.learnSafe(result)
+			}
+			if ok && ch.TipAhead && q.Method == "eth_getBlockByNumber" && params == `["latest",false]` {
+				u.tipHead(target.Path, result, false)
+			}
+			return result, ok
+		})
+	} else if early, held := u.tipTry(ch, req, q); held {
+		return early, true
+	} else if early, held := u.callTry(ch, req, q); held {
+		return early, true
+	} else if height, full, isBlock := q.block(); isBlock && ahead > 0 {
+		return u.readAhead(req, height, full, ahead)
+	} else if suffix, isHeader := q.headerByHeight(); isHeader {
+		if result, ok = u.holdByHeight(ch, q); ok {
+			u.heads.hits.Add(1)
+		} else if result, ok = u.heads.byNumber(req.URL.Path+" "+q.Method, suffix, q.first, ttl); !ok && ch.ReadAheadHeaders {
+			result, ok = u.readAheadHeader(req, q, suffix, ahead)
+		}
+		return result, ok
+	}
+	return nil, false
+}
+
+// headerBatchMax bounds a header batch answered here; Bifrost sends two or three calls.
+const headerBatchMax = 8
+
+// headerBatch answers a JSON-RPC batch made only of header queries: a header
+// by head tag, as the cache serves, or by height. Recent Bifrost releases read
+// the tip header and the header of the block it is scanning in one batch, and
+// reads them one at a time when a provider rejects batches, so each element is
+// answered here as that single call would be: from the head cache, the hold or
+// an early call when one of them has it, and otherwise by the router making
+// that exact call. The reply holds one result per call, in the order sent.
+//
+// A batch with any other call, a repeated id, or an element the provider did
+// not answer with a plain result is forwarded untouched and gets the
+// provider's own reply to the whole batch.
+func (u *upstream) headerBatch(req *http.Request, ch Chain, body []byte) ([]byte, bool) {
+	if trimmed := bytes.TrimLeft(body, " \t\r\n"); len(trimmed) == 0 || trimmed[0] != '[' {
+		return nil, false
+	}
+	var raw []json.RawMessage
+	if json.Unmarshal(body, &raw) != nil || len(raw) < 2 || len(raw) > headerBatchMax {
+		return nil, false
+	}
+	calls, ids := make([]rpcQuery, len(raw)), map[string]bool{}
+	for i, r := range raw {
+		q, ok := parseRPC(r)
+		_, isHead := q.head()
+		_, isHeader := q.headerByHeight()
+		if !ok || !isHead && !isHeader || q.Method == "eth_blockNumber" || ids[string(q.ID)] {
+			return nil, false
+		}
+		calls[i], ids[string(q.ID)] = q, true
+	}
+	results, failed := make([]json.RawMessage, len(calls)), atomic.Bool{}
+	target, header := *req.URL, req.Header.Clone()
+	var wg sync.WaitGroup
+	for i, q := range calls {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result, ok := u.answer(req, ch, q)
+			if _, isHead := q.head(); !ok && !isHead {
+				result, ok = u.fetchRPC(&target, header, q.Method, string(q.raw), headResponseLimit)
+			}
+			if !ok {
+				failed.Store(true)
+			}
+			results[i] = result
+		}()
+	}
+	wg.Wait()
+	if failed.Load() {
+		return nil, false
+	}
+	reply := []byte{'['}
+	for i, q := range calls {
+		if i > 0 {
+			reply = append(reply, ',')
+		}
+		reply = append(reply, `{"jsonrpc":"2.0","id":`+string(q.ID)+`,"result":`+string(results[i])+`}`...)
+	}
+	u.batches.Add(1)
+	return append(reply, ']', '\n'), true
 }
 
 // fetchRPC makes the router's own provider call behind a cache entry. It is not

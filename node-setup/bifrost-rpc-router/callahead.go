@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -189,18 +187,4 @@ func (a *callAhead) wait(ctx context.Context, e *aheadEntry, hits *atomic.Uint64
 	}
 	hits.Add(1)
 	return e.result, true
-}
-
-// parseTag accepts only the canonical hex form of a block height.
-func parseTag(tag string) (uint64, bool) {
-	if !strings.HasPrefix(tag, "0x") {
-		return 0, false
-	}
-	n, err := strconv.ParseUint(tag[2:], 16, 64)
-	return n, err == nil && tag == blockTag(n)
-}
-
-func finish(e *aheadEntry, result json.RawMessage, ok bool) {
-	e.result, e.ok, e.at = result, ok, time.Now()
-	close(e.done)
 }

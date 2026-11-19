@@ -45,11 +45,22 @@ type Chain struct {
 	// Opt-in, needs read_ahead_blocks: also fetch header-by-height queries ahead
 	// of the scanner, again never past the safe head. See readahead.go.
 	ReadAheadHeaders bool `json:"read_ahead_headers,omitempty"`
+	// Opt-in, for bitcoind-RPC chains, instead of head_cache_ms: keep the tip no
+	// older than this and fetch each new block and its previous-transaction
+	// lookups before the scanner asks. See utxo.go.
+	UTXOAheadMS int `json:"utxo_ahead_ms,omitempty"`
+	// Opt-in, needs head_cache_ms: keep the head current without waiting for the
+	// scanner and fetch each new head block and its receipts before it asks.
+	// See tipahead.go.
+	TipAhead bool `json:"tip_ahead,omitempty"`
 	// Opt-in, needs head_cache_ms: when a known run of height-pinned state
 	// queries starts, make the rest of the run early. See callahead.go.
-	CallAhead bool                         `json:"call_ahead,omitempty"`
-	Endpoints map[string]Endpoint          `json:"endpoints"`
-	Backends  map[string]map[string]string `json:"backends"`
+	CallAhead bool `json:"call_ahead,omitempty"`
+	// Opt-in, needs tip_ahead and call_ahead: show the scanner a block that
+	// touches a vault only once this many later blocks exist. See holdahead.go.
+	HoldBlocks int                          `json:"hold_blocks,omitempty"`
+	Endpoints  map[string]Endpoint          `json:"endpoints"`
+	Backends   map[string]map[string]string `json:"backends"`
 }
 
 type Endpoint struct {
@@ -144,7 +155,7 @@ func validateTarget(t Target) error {
 		return errors.New("invalid target path")
 	}
 	for k, v := range t.Headers {
-		if k != "Authorization" && k != "X-Api-Key" {
+		if k != "Authorization" && k != "X-Api-Key" && k != "Tron-Pro-Api-Key" {
 			return errors.New("unsupported credential header")
 		}
 		if strings.ContainsAny(v, "\r\n") || len(v) > 8192 || strings.TrimSpace(v) == "" {
@@ -169,7 +180,7 @@ func loadCatalog(filename string) (*catalog, error) {
 	out := &catalog{config: c, targets: map[string]map[string]map[string]Target{}}
 	paths := []string{}
 	for name, chain := range c.Chains {
-		if !identifier.MatchString(name) || chain.Active < 1 || chain.Active > 128 || chain.Waiting < 0 || chain.Waiting > 128 || chain.TimeoutSeconds < 1 || chain.TimeoutSeconds > 120 || chain.QueueSeconds < 1 || chain.QueueSeconds > 5 || chain.QueueSeconds > chain.TimeoutSeconds || chain.MaxRequestBytes < 1 || chain.MaxRequestBytes > 8<<20 || chain.HeadCacheMS < 0 || chain.HeadCacheMS > 5000 || chain.ReadAheadBlocks < 0 || chain.ReadAheadBlocks > 8 || chain.ReadAheadBlocks > 0 && chain.HeadCacheMS == 0 || chain.ReadAheadHeaders && chain.ReadAheadBlocks == 0 || chain.CallAhead && chain.HeadCacheMS == 0 || len(chain.Endpoints) == 0 || len(chain.Endpoints) > 4 || len(chain.Backends) == 0 || len(chain.Backends) > 16 || chain.Backends[chain.Default] == nil {
+		if !identifier.MatchString(name) || chain.Active < 1 || chain.Active > 128 || chain.Waiting < 0 || chain.Waiting > 128 || chain.TimeoutSeconds < 1 || chain.TimeoutSeconds > 120 || chain.QueueSeconds < 1 || chain.QueueSeconds > 5 || chain.QueueSeconds > chain.TimeoutSeconds || chain.MaxRequestBytes < 1 || chain.MaxRequestBytes > 8<<20 || chain.HeadCacheMS < 0 || chain.HeadCacheMS > 5000 || chain.ReadAheadBlocks < 0 || chain.ReadAheadBlocks > 8 || chain.ReadAheadBlocks > 0 && chain.HeadCacheMS == 0 || chain.ReadAheadHeaders && chain.ReadAheadBlocks == 0 || chain.TipAhead && chain.HeadCacheMS == 0 || chain.CallAhead && chain.HeadCacheMS == 0 || chain.HoldBlocks < 0 || chain.HoldBlocks > holdMaxBlocks || chain.HoldBlocks > 0 && !(chain.TipAhead && chain.CallAhead) || chain.UTXOAheadMS != 0 && (chain.UTXOAheadMS < 200 || chain.UTXOAheadMS > 5000 || chain.HeadCacheMS != 0) || len(chain.Endpoints) == 0 || len(chain.Endpoints) > 4 || len(chain.Backends) == 0 || len(chain.Backends) > 16 || chain.Backends[chain.Default] == nil {
 			return nil, errors.New("invalid chain configuration")
 		}
 		for id, endpoint := range chain.Endpoints {
@@ -225,7 +236,10 @@ func compatible(a, b Config) bool {
 		old.HeadCacheMS, next.HeadCacheMS = 0, 0 // Tunable by reload.
 		old.ReadAheadBlocks, next.ReadAheadBlocks = 0, 0
 		old.ReadAheadHeaders, next.ReadAheadHeaders = false, false
+		old.UTXOAheadMS, next.UTXOAheadMS = 0, 0
+		old.TipAhead, next.TipAhead = false, false
 		old.CallAhead, next.CallAhead = false, false
+		old.HoldBlocks, next.HoldBlocks = 0, 0
 		if !ok || !reflect.DeepEqual(old, next) {
 			return false
 		}
